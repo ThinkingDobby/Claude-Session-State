@@ -1,11 +1,22 @@
 # claude-session-state
 
-로컬에서 실행 중인 Claude Code 세션(대화형 + 백그라운드) 상태를 실시간으로 보여주는 대시보드.
-`claude agents --json --all`을 주기적으로 읽어 SSE로 브라우저에 스트리밍한다.
+Claude 세션 / 작업 상태 모니터링 툴  
+
+
+설치: ./install.sh  
+실행: claude-session-state  
 
 <img width="800" alt="스크린샷 2026-09-10 오전 7 23 25" src="https://github.com/user-attachments/assets/ea2067bd-5bc7-451b-913c-b62aa2856426" />
 
-## 요구사항
+<details>
+  <summary>상세 설명</summary>  
+
+<br>
+
+  로컬에서 실행 중인 Claude Code 세션(대화형 + 백그라운드) 상태를 실시간으로 보여주는 대시보드.
+`claude agents --json --all`을 주기적으로 읽어 SSE로 브라우저에 스트리밍한다.
+
+  ## 요구사항
 
 - Node.js 18 이상
 - Claude Code CLI (`claude` 명령어가 PATH에 있어야 함)
@@ -63,3 +74,6 @@ rm ~/.local/bin/claude-session-state
 ```
 
 필요하면 클론한 프로젝트 디렉토리도 삭제한다.
+</details>
+
+<br>
