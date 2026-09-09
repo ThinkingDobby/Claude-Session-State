@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Claude Session State</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<header>
+  <div class="title-row">
+    <h1>Claude 세션 상태</h1>
+    <span id="conn-dot" class="dot dot-connecting" title="연결 상태"></span>
+  </div>
+  <div class="toolbar">
+    <div class="filters" id="filters">
+      <button data-filter="all" class="active">전체</button>
+      <button data-filter="busy">작업 중</button>
+      <button data-filter="idle">대기 중</button>
+      <button data-filter="other">기타</button>
+    </div>
+    <div class="toolbar-right">
+      <span id="last-updated" class="muted">-</span>
+      <button id="notify-btn" class="ghost-btn">🔔 알림 허용</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="error-banner" class="error-banner" hidden></div>
+  <div id="empty-state" class="empty-state" hidden>표시할 세션이 없습니다.</div>
+  <div id="grid" class="grid"></div>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

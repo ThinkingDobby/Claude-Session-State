@@ -1,0 +1,13 @@
+{
+  "name": "claude-session-state",
+  "version": "1.0.0",
+  "private": true,
+  "description": "로컬에서 실행 중인 Claude Code 세션 상태를 실시간으로 보여주는 대시보드",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
