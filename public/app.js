@@ -80,6 +80,7 @@ function notify(title, body) {
 }
 
 function filterBucket(rawValue) {
+  if (rawValue === 'waiting') return 'waiting';
   const cls = classify(rawValue);
   return cls === 'busy' || cls === 'idle' ? cls : 'other';
 }
@@ -106,8 +107,9 @@ function render() {
   emptyEl.hidden = filtered.length > 0;
   gridEl.innerHTML = '';
 
+  const RANK_ORDER = { busy: 0, waiting: 1, idle: 2, other: 3 };
   const sorted = [...filtered].sort((a, b) => {
-    const rank = (s) => (filterBucket(rawStatus(s)) === 'busy' ? 0 : filterBucket(rawStatus(s)) === 'idle' ? 1 : 2);
+    const rank = (s) => RANK_ORDER[filterBucket(rawStatus(s))];
     const r = rank(a) - rank(b);
     return r !== 0 ? r : b.startedAt - a.startedAt;
   });
