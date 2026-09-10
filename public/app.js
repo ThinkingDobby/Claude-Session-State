@@ -186,15 +186,29 @@ filterButtons.forEach((btn) => {
   });
 });
 
+function updateNotifyButton() {
+  notifyBtn.classList.toggle('on', notifyEnabled);
+  notifyBtn.textContent = notifyEnabled ? '🔔 알림 켜짐' : '🔔 알림 허용';
+}
+
+updateNotifyButton();
+
 notifyBtn.addEventListener('click', async () => {
   if (!('Notification' in window)) {
     alert('이 브라우저는 알림을 지원하지 않습니다.');
     return;
   }
-  const permission = await Notification.requestPermission();
-  notifyEnabled = permission === 'granted';
-  notifyBtn.classList.toggle('on', notifyEnabled);
-  notifyBtn.textContent = notifyEnabled ? '🔔 알림 켜짐' : '🔔 알림 허용';
+
+  if (notifyEnabled) {
+    notifyEnabled = false;
+  } else if (Notification.permission === 'granted') {
+    notifyEnabled = true;
+  } else {
+    const permission = await Notification.requestPermission();
+    notifyEnabled = permission === 'granted';
+  }
+
+  updateNotifyButton();
 });
 
 if ('Notification' in window && Notification.permission === 'granted') {
