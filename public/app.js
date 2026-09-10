@@ -17,7 +17,7 @@ let currentSessions = [];
 let previousByPid = new Map();
 let activeFilter = 'all';
 let notifyEnabled = Notification && Notification.permission === 'granted';
-let kanbanEnabled = true;
+let kanbanEnabled = false;
 
 // interactive 세션은 status 필드, background 세션은 state 필드를 쓴다.
 function rawStatus(session) {
