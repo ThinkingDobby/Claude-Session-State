@@ -20,7 +20,7 @@ function rawStatus(session) {
 
 function classify(rawValue) {
   if (rawValue === 'busy' || rawValue === 'running') return 'busy';
-  if (rawValue === 'idle') return 'idle';
+  if (rawValue === 'idle' || rawValue === 'waiting') return 'idle';
   if (rawValue === 'completed' || rawValue === 'done') return 'completed';
   if (rawValue === 'failed' || rawValue === 'error') return 'failed';
   if (rawValue === 'stopped' || rawValue === 'exited' || rawValue === 'killed') return 'stopped';
@@ -31,6 +31,7 @@ const STATUS_LABELS = {
   busy: '작업 중',
   running: '작업 중',
   idle: '대기 중',
+  waiting: '입력 필요',
   completed: '완료',
   done: '완료',
   failed: '실패',
@@ -117,7 +118,7 @@ function render() {
     card.dataset.key = sessionKey(session);
 
     const raw = rawStatus(session);
-    const cls = classify(raw);
+    const cls = raw === 'waiting' ? 'waiting' : classify(raw);
     const idLabel = session.pid != null ? `pid ${session.pid}` : `id ${session.id || ''}`;
     card.innerHTML = `
       <div class="card-top">
@@ -186,15 +187,29 @@ filterButtons.forEach((btn) => {
   });
 });
 
+function updateNotifyButton() {
+  notifyBtn.classList.toggle('on', notifyEnabled);
+  notifyBtn.textContent = notifyEnabled ? '🔔 알림 켜짐' : '🔔 알림 허용';
+}
+
+updateNotifyButton();
+
 notifyBtn.addEventListener('click', async () => {
   if (!('Notification' in window)) {
     alert('이 브라우저는 알림을 지원하지 않습니다.');
     return;
   }
-  const permission = await Notification.requestPermission();
-  notifyEnabled = permission === 'granted';
-  notifyBtn.classList.toggle('on', notifyEnabled);
-  notifyBtn.textContent = notifyEnabled ? '🔔 알림 켜짐' : '🔔 알림 허용';
+
+  if (notifyEnabled) {
+    notifyEnabled = false;
+  } else if (Notification.permission === 'granted') {
+    notifyEnabled = true;
+  } else {
+    const permission = await Notification.requestPermission();
+    notifyEnabled = permission === 'granted';
+  }
+
+  updateNotifyButton();
 });
 
 if ('Notification' in window && Notification.permission === 'granted') {

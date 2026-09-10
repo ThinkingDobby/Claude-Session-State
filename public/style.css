@@ -9,6 +9,8 @@
   --busy-bg: #fff3e0;
   --idle: #16a34a;
   --idle-bg: #e8f7ee;
+  --waiting: #7c3aed;
+  --waiting-bg: #f1e9fe;
   --other: #6b7078;
   --other-bg: #eceef1;
   --completed: #2563eb;
@@ -29,6 +31,7 @@
     --muted: #8b909b;
     --busy-bg: #3a2a10;
     --idle-bg: #10301e;
+    --waiting-bg: #2d1f47;
     --other-bg: #232732;
     --completed-bg: #1a2740;
     --failed-bg: #3a1a1a;
@@ -183,6 +186,7 @@ main {
 }
 .badge-busy { color: var(--busy); background: var(--busy-bg); }
 .badge-idle { color: var(--idle); background: var(--idle-bg); }
+.badge-waiting { color: var(--waiting); background: var(--waiting-bg); }
 .badge-other { color: var(--other); background: var(--other-bg); }
 .badge-completed { color: var(--completed); background: var(--completed-bg); }
 .badge-failed { color: var(--failed); background: var(--failed-bg); }
