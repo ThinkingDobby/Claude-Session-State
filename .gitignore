@@ -1,3 +1,5 @@
 node_modules/
 .server.pid
 .server.log
+.playwright-mcp/
+card-closeup*.png

@@ -2,6 +2,7 @@
 
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
 
@@ -9,6 +10,59 @@ const PORT = Number(process.env.PORT) || 4321;
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 2000;
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
+
+// sessionId -> 트랜스크립트가 들어있는 프로젝트 디렉터리 이름.
+// cwd를 그대로 인코딩해서 추정하면 안 된다 (worktree 이동 등으로 실제 저장 위치와 어긋날 수 있음).
+const transcriptDirCache = new Map();
+
+async function findTranscriptPath(sessionId) {
+  const cachedDir = transcriptDirCache.get(sessionId);
+  if (cachedDir) {
+    const cachedPath = path.join(CLAUDE_PROJECTS_DIR, cachedDir, `${sessionId}.jsonl`);
+    try {
+      await fs.promises.access(cachedPath);
+      return cachedPath;
+    } catch (_) {
+      transcriptDirCache.delete(sessionId);
+    }
+  }
+
+  let entries;
+  try {
+    entries = await fs.promises.readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
+  } catch (_) {
+    return null;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(CLAUDE_PROJECTS_DIR, entry.name, `${sessionId}.jsonl`);
+    try {
+      await fs.promises.access(candidate);
+      transcriptDirCache.set(sessionId, entry.name);
+      return candidate;
+    } catch (_) {
+      // 이 디렉터리는 아님, 다음으로
+    }
+  }
+  return null;
+}
+
+// 트랜스크립트 파일은 append-only라서 mtime이 곧 마지막 요청/응답 시각과 같다.
+async function attachLastActivity(sessions) {
+  await Promise.all(sessions.map(async (session) => {
+    if (!session.sessionId) return;
+    const transcriptPath = await findTranscriptPath(session.sessionId);
+    if (!transcriptPath) return;
+    try {
+      const stat = await fs.promises.stat(transcriptPath);
+      session.lastActivityAt = stat.mtimeMs;
+    } catch (_) {
+      // 폴링 사이 파일이 사라졌을 수 있음, 무시
+    }
+  }));
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -25,7 +79,9 @@ function fetchSessions() {
       }
       try {
         const sessions = JSON.parse(stdout);
-        resolve({ ok: true, sessions, fetchedAt: Date.now() });
+        attachLastActivity(sessions).then(() => {
+          resolve({ ok: true, sessions, fetchedAt: Date.now() });
+        });
       } catch (parseErr) {
         resolve({ ok: false, error: `JSON 파싱 실패: ${parseErr.message}`, sessions: [], fetchedAt: Date.now() });
       }
