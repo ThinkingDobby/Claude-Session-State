@@ -2,10 +2,10 @@
 
 Claude 세션 / 작업 상태 모니터링 툴  
 
-설치: ./install.sh  
-실행: claude-session-state  
-  
+설치 및 실행  
 ```git clone https://github.com/ThinkingDobby/Claude-Session-State.git && cd Claude-Session-State && ./install.sh && export PATH="$HOME/.local/bin:$PATH" && claude-session-state```
+
+이후 claude-session-state 명령으로 실행 가능
 
 <img width="800" alt="스크린샷 2026-09-10 오전 7 23 25" src="https://github.com/user-attachments/assets/ea2067bd-5bc7-451b-913c-b62aa2856426" />
 
