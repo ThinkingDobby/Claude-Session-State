@@ -4,13 +4,15 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 const PORT = Number(process.env.PORT) || 4321;
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 2000;
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
+const PID_FILE = path.join(__dirname, '.server.pid');
+const LOG_FILE = path.join(__dirname, '.server.log');
 
 // sessionId -> 트랜스크립트가 들어있는 프로젝트 디렉터리 이름.
 // cwd를 그대로 인코딩해서 추정하면 안 된다 (worktree 이동 등으로 실제 저장 위치와 어긋날 수 있음).
@@ -113,6 +115,35 @@ function serveStatic(req, res) {
 
 const sseClients = new Set();
 let lastPayload = null;
+let restarting = false;
+
+// 현재 프로세스가 완전히 내려간 뒤 같은 설정으로 새 서버를 띄우는 분리된 셸을 남기고 종료한다.
+// PID 파일도 갱신해서 bin/claude-session-state.sh 의 stop/status 와 어긋나지 않게 한다.
+function restartSelf() {
+  if (restarting) return;
+  restarting = true;
+
+  const script = [
+    `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.1; done`,
+    `cd ${JSON.stringify(__dirname)}`,
+    `nohup ${JSON.stringify(process.execPath)} server.js >> ${JSON.stringify(LOG_FILE)} 2>&1 &`,
+    `echo $! > ${JSON.stringify(PID_FILE)}`,
+  ].join('\n');
+
+  const child = spawn('/bin/bash', ['-c', script], {
+    detached: true,
+    stdio: 'ignore',
+    env: process.env,
+  });
+  child.unref();
+
+  for (const res of sseClients) {
+    try { res.end(); } catch (_) { /* 이미 닫힌 연결 */ }
+  }
+  sseClients.clear();
+  server.close();
+  setTimeout(() => process.exit(0), 200);
+}
 
 async function pollAndBroadcast() {
   const data = await fetchSessions();
@@ -128,6 +159,13 @@ const server = http.createServer(async (req, res) => {
     const data = lastPayload || await fetchSessions();
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(data));
+    return;
+  }
+
+  if (req.url === '/api/restart' && req.method === 'POST') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: true }));
+    restartSelf();
     return;
   }
 

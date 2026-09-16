@@ -11,6 +11,7 @@ const kanbanToggleBtn = document.getElementById('kanban-toggle');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsDialog = document.getElementById('settings-dialog');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
+const restartBtn = document.getElementById('restart-btn');
 const filterButtons = document.querySelectorAll('#filters button');
 
 let currentSessions = [];
@@ -303,6 +304,44 @@ if ('Notification' in window && Notification.permission === 'granted') {
   notifyBtn.classList.add('on');
   notifyBtn.textContent = '🔔 알림 켜짐';
 }
+
+async function waitForServer(timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  // 먼저 기존 프로세스가 내려갈 시간을 준 뒤 새 서버가 응답할 때까지 폴링한다.
+  await new Promise((r) => setTimeout(r, 600));
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch('/api/sessions', { cache: 'no-store' });
+      if (res.ok) return true;
+    } catch (_) {
+      // 아직 새 서버가 뜨지 않음
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return false;
+}
+
+restartBtn.addEventListener('click', async () => {
+  if (!confirm('서버를 재시작할까요?')) return;
+
+  restartBtn.disabled = true;
+  restartBtn.textContent = '🔄 재시작 중…';
+
+  try {
+    await fetch('/api/restart', { method: 'POST' });
+  } catch (_) {
+    // 응답 직후 서버가 종료되면서 연결이 끊길 수 있음, 정상 흐름
+  }
+
+  const alive = await waitForServer(15000);
+  if (alive) {
+    location.reload();
+  } else {
+    restartBtn.disabled = false;
+    restartBtn.textContent = '🔄 서버 재시작';
+    alert('서버가 다시 응답하지 않습니다. 터미널에서 claude-session-state restart 를 실행해 주세요.');
+  }
+});
 
 connectStream();
 setInterval(render, 1000);
