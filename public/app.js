@@ -12,6 +12,11 @@ const settingsBtn = document.getElementById('settings-btn');
 const settingsDialog = document.getElementById('settings-dialog');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 const restartBtn = document.getElementById('restart-btn');
+const transcriptDialog = document.getElementById('transcript-dialog');
+const transcriptTitle = document.getElementById('transcript-title');
+const transcriptSubtitle = document.getElementById('transcript-subtitle');
+const transcriptBody = document.getElementById('transcript-body');
+const transcriptCloseBtn = document.getElementById('transcript-close-btn');
 const filterButtons = document.querySelectorAll('#filters button');
 
 let currentSessions = [];
@@ -71,6 +76,21 @@ function formatElapsed(timestamp) {
   if (hours < 24) return `${hours}시간 전`;
   const days = Math.floor(hours / 24);
   return `${days}일 전`;
+}
+
+// claude-fable-5-1 -> Fable 5.1, claude-haiku-4-5-20251001 -> Haiku 4.5
+function formatModelName(model) {
+  if (!model) return '';
+  const cleaned = String(model)
+    .replace(/^claude-/, '')
+    .replace(/\[[^\]]*\]$/, '')
+    .replace(/-\d{8}$/, '');
+  const parts = cleaned.split('-').filter(Boolean);
+  if (!parts.length) return '';
+  const family = parts.shift();
+  const label = family.charAt(0).toUpperCase() + family.slice(1);
+  const version = parts.join('.');
+  return version ? `${label} ${version}` : label;
 }
 
 function shortCwd(cwd) {
@@ -141,42 +161,121 @@ function diffAndNotify(nextByKey) {
   }
 }
 
-function buildCardElement(session) {
+// 카드 DOM 을 매 렌더마다 새로 만들면 마우스가 올라가 있던 요소가 사라져서
+// 호버 테두리가 1초마다 깜빡인다. 그래서 요소를 키로 재사용하고 바뀐 값만 갱신한다.
+const cardElements = new Map();
+const kanbanColumns = new Map();
+
+function setText(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
+
+function createCardShell() {
   const card = document.createElement('div');
   card.className = 'card';
-  card.dataset.key = sessionKey(session);
+  card.innerHTML = `
+    <div class="card-top">
+      <div class="card-name"></div>
+      <span class="badge"></span>
+    </div>
+    <div class="card-cwd"></div>
+    <div class="card-meta">
+      <span><span class="card-kind-id"></span><span class="card-sid-wrap" hidden> · sid <span class="card-sid" role="button" tabindex="0"></span></span></span>
+      <span class="card-started" title="시작 시각"></span>
+    </div>
+    <div class="card-meta card-meta-secondary" hidden>
+      <span class="card-model" title="이 세션에 선택된 모델"></span>
+      <span class="card-activity" title="마지막 요청 시각"></span>
+    </div>
+  `;
+  return card;
+}
 
+function updateCard(card, session) {
   const raw = rawStatus(session);
   const cls = raw === 'waiting' ? 'waiting' : classify(raw);
   const idLabel = session.pid != null ? `pid ${session.pid}` : `id ${session.id || ''}`;
   const sid = session.sessionId || '';
-  const copied = sid && sid === copiedSessionId;
-  const sidHtml = sid
-    ? ` · sid <span class="card-sid${copied ? ' copied' : ''}" role="button" tabindex="0" data-sid="${escapeHtml(sid)}" title="세션 ID: ${escapeHtml(sid)} (클릭하면 복사)">${escapeHtml(copied ? '복사됨!' : shortSessionId(sid))}</span>`
-    : '';
-  card.innerHTML = `
-    <div class="card-top">
-      <div class="card-name" title="${escapeHtml(session.name || '')}">${escapeHtml(displayName(session))}</div>
-      <span class="badge badge-${cls}">${escapeHtml(statusLabel(raw))}</span>
-    </div>
-    <div class="card-cwd">${escapeHtml(shortCwd(session.cwd) || '')}</div>
-    <div class="card-meta">
-      <span>${escapeHtml(session.kind || '')} · ${escapeHtml(idLabel)}${sidHtml}</span>
-      <span title="시작 시각">${escapeHtml(formatElapsed(session.startedAt))} 🕐</span>
-    </div>
-    ${session.lastActivityAt ? `
-    <div class="card-meta card-meta-secondary">
-      <span></span>
-      <span title="마지막 요청 시각">${escapeHtml(formatElapsed(session.lastActivityAt))} 💬</span>
-    </div>` : ''}
-  `;
+
+  if (sid) {
+    card.dataset.sessionId = sid;
+    card.dataset.sessionName = session.name || '';
+  } else {
+    delete card.dataset.sessionId;
+    delete card.dataset.sessionName;
+  }
+
+  const nameEl = card.querySelector('.card-name');
+  setText(nameEl, displayName(session));
+  const fullName = session.name || '';
+  if (nameEl.title !== fullName) nameEl.title = fullName;
+
+  const badge = card.querySelector('.badge');
+  const badgeClass = `badge badge-${cls}`;
+  if (badge.className !== badgeClass) badge.className = badgeClass;
+  setText(badge, statusLabel(raw));
+
+  setText(card.querySelector('.card-cwd'), shortCwd(session.cwd) || '');
+  setText(card.querySelector('.card-kind-id'), `${session.kind || ''} · ${idLabel}`);
+
+  const sidWrap = card.querySelector('.card-sid-wrap');
+  sidWrap.hidden = !sid;
+  if (sid) {
+    const sidEl = card.querySelector('.card-sid');
+    const copied = sid === copiedSessionId;
+    setText(sidEl, copied ? '복사됨!' : shortSessionId(sid));
+    sidEl.classList.toggle('copied', copied);
+    if (sidEl.dataset.sid !== sid) {
+      sidEl.dataset.sid = sid;
+      sidEl.title = `세션 ID: ${sid} (클릭하면 복사)`;
+    }
+  }
+
+  setText(card.querySelector('.card-started'), `${formatElapsed(session.startedAt)} 🕐`);
+
+  const modelName = formatModelName(session.model);
+  card.dataset.sessionModel = modelName;
+
+  const secondary = card.querySelector('.card-meta-secondary');
+  secondary.hidden = !session.lastActivityAt && !modelName;
+  setText(card.querySelector('.card-model'), modelName);
+  setText(
+    card.querySelector('.card-activity'),
+    session.lastActivityAt ? `${formatElapsed(session.lastActivityAt)} 💬` : '',
+  );
+}
+
+function buildCardElement(session) {
+  const key = sessionKey(session);
+  let card = cardElements.get(key);
+  if (!card) {
+    card = createCardShell();
+    card.dataset.key = key;
+    cardElements.set(key, card);
+  }
+  updateCard(card, session);
   return card;
+}
+
+// 구성과 순서가 그대로면 DOM 을 아예 건드리지 않는다.
+function syncChildren(container, elements) {
+  const current = container.children;
+  if (current.length === elements.length) {
+    let same = true;
+    for (let i = 0; i < elements.length; i += 1) {
+      if (current[i] !== elements[i]) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return;
+  }
+  container.replaceChildren(...elements);
 }
 
 function renderGrid(filtered) {
   kanbanEl.hidden = true;
   gridEl.hidden = false;
-  gridEl.innerHTML = '';
 
   const sorted = [...filtered].sort((a, b) => {
     const rank = (s) => RANK_ORDER[filterBucket(rawStatus(s))];
@@ -184,37 +283,51 @@ function renderGrid(filtered) {
     return r !== 0 ? r : b.startedAt - a.startedAt;
   });
 
-  for (const session of sorted) {
-    gridEl.appendChild(buildCardElement(session));
+  syncChildren(gridEl, sorted.map((session) => buildCardElement(session)));
+}
+
+function getKanbanColumn(bucket) {
+  let column = kanbanColumns.get(bucket);
+  if (!column) {
+    column = document.createElement('div');
+    column.className = 'kanban-column';
+    column.innerHTML = `
+      <div class="kanban-column-header">
+        <span>${escapeHtml(BUCKET_LABELS[bucket])}</span>
+        <span class="kanban-count">0</span>
+      </div>
+      <div class="kanban-column-body"></div>
+    `;
+    kanbanColumns.set(bucket, column);
   }
+  return column;
 }
 
 function renderKanban(filtered) {
   gridEl.hidden = true;
   kanbanEl.hidden = false;
-  kanbanEl.innerHTML = '';
 
   const buckets = new Map(BUCKET_ORDER.map((b) => [b, []]));
   for (const session of filtered) {
     buckets.get(filterBucket(rawStatus(session))).push(session);
   }
 
-  for (const bucket of BUCKET_ORDER) {
+  const columns = BUCKET_ORDER.map((bucket) => {
     const sessions = buckets.get(bucket).sort((a, b) => b.startedAt - a.startedAt);
-    const column = document.createElement('div');
-    column.className = 'kanban-column';
-    column.innerHTML = `
-      <div class="kanban-column-header">
-        <span>${escapeHtml(BUCKET_LABELS[bucket])}</span>
-        <span class="kanban-count">${sessions.length}</span>
-      </div>
-      <div class="kanban-column-body"></div>
-    `;
-    const body = column.querySelector('.kanban-column-body');
-    for (const session of sessions) {
-      body.appendChild(buildCardElement(session));
-    }
-    kanbanEl.appendChild(column);
+    const column = getKanbanColumn(bucket);
+    setText(column.querySelector('.kanban-count'), String(sessions.length));
+    syncChildren(column.querySelector('.kanban-column-body'), sessions.map((session) => buildCardElement(session)));
+    return column;
+  });
+
+  syncChildren(kanbanEl, columns);
+}
+
+// 사라진 세션의 카드 요소는 캐시에서 지운다.
+function pruneCardElements() {
+  const liveKeys = new Set(currentSessions.map((session) => sessionKey(session)));
+  for (const key of cardElements.keys()) {
+    if (!liveKeys.has(key)) cardElements.delete(key);
   }
 }
 
@@ -228,6 +341,8 @@ function render() {
   } else {
     renderGrid(filtered);
   }
+
+  pruneCardElements();
 }
 
 function escapeHtml(str) {
@@ -395,10 +510,80 @@ async function handleSessionIdActivate(target) {
   }, 1200);
 }
 
+const ROLE_LABELS = { user: '나', assistant: 'Claude' };
+
+function formatTurnTime(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('ko-KR');
+}
+
+function renderTranscriptStatus(message) {
+  transcriptBody.innerHTML = `<div class="transcript-status">${escapeHtml(message)}</div>`;
+}
+
+function renderTranscriptTurns(turns) {
+  if (!turns.length) {
+    renderTranscriptStatus('표시할 대화가 없습니다.');
+    return;
+  }
+
+  transcriptBody.innerHTML = turns.map((turn) => `
+    <div class="transcript-turn transcript-turn-${turn.role === 'user' ? 'user' : 'assistant'}">
+      <div class="transcript-turn-head">
+        <span class="transcript-role">${escapeHtml(ROLE_LABELS[turn.role] || turn.role)}</span>
+        <span>${escapeHtml(formatTurnTime(turn.timestamp))}</span>
+        ${turn.truncated ? '<span>· 일부만 표시</span>' : ''}
+      </div>
+      <p class="transcript-text">${escapeHtml(turn.text)}</p>
+    </div>
+  `).join('');
+
+  // 가장 최근 대화가 아래쪽이므로 끝으로 스크롤한다.
+  transcriptBody.scrollTop = transcriptBody.scrollHeight;
+}
+
+async function openTranscript(sessionId, sessionName, modelName) {
+  transcriptTitle.textContent = sessionName || '최근 대화';
+  transcriptSubtitle.textContent = modelName ? `${modelName} · sid ${sessionId}` : `sid ${sessionId}`;
+  renderTranscriptStatus('불러오는 중…');
+  transcriptDialog.showModal();
+
+  try {
+    const res = await fetch(`/api/transcript?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' });
+    const payload = await res.json();
+    if (!payload.ok) {
+      renderTranscriptStatus(payload.error || '대화를 불러오지 못했습니다.');
+      return;
+    }
+    renderTranscriptTurns(payload.turns || []);
+  } catch (err) {
+    renderTranscriptStatus(`대화를 불러오지 못했습니다: ${err.message}`);
+  }
+}
+
+transcriptCloseBtn.addEventListener('click', () => {
+  transcriptDialog.close();
+});
+
+transcriptDialog.addEventListener('click', (event) => {
+  if (event.target === transcriptDialog) {
+    transcriptDialog.close();
+  }
+});
+
 [gridEl, kanbanEl].forEach((container) => {
   container.addEventListener('click', (event) => {
     const target = event.target.closest('.card-sid');
-    if (target) handleSessionIdActivate(target);
+    if (target) {
+      handleSessionIdActivate(target);
+      return;
+    }
+
+    const card = event.target.closest('.card');
+    if (card && card.dataset.sessionId) {
+      openTranscript(card.dataset.sessionId, card.dataset.sessionName, card.dataset.sessionModel);
+    }
   });
   container.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
