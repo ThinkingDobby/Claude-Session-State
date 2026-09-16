@@ -3,7 +3,7 @@
 Claude 세션 / 작업 상태 모니터링 툴  
 
 설치 및 실행  
-```git clone https://github.com/ThinkingDobby/Claude-Session-State.git && cd Claude-Session-State && ./install.sh && export PATH="$HOME/.local/bin:$PATH" && claude-session-state```
+```curl -fsSL https://raw.githubusercontent.com/ThinkingDobby/Claude-Session-State/main/install.sh | bash && ~/.local/bin/claude-session-state```
 
 이후 claude-session-state 명령으로 실행 가능
 
@@ -25,24 +25,38 @@ Claude 세션 / 작업 상태 모니터링 툴
 ## 설치
 
 ```bash
-git clone <이 저장소 URL>
-cd claude-session-state
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/ThinkingDobby/Claude-Session-State/main/install.sh | bash
+```
+
+이 명령은 설치까지만 한다. 설치와 동시에 대시보드를 띄우려면 실행 명령을 이어 붙인다.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ThinkingDobby/Claude-Session-State/main/install.sh | bash && ~/.local/bin/claude-session-state
 ```
 
 `install.sh`가 하는 일:
 
+- 소스를 `~/.local/share/claude-session-state`에 받는다. 이미 있으면 `git pull`로 갱신하므로 같은 명령이 업데이트도 겸한다.
 - `bin/claude-session-state.sh`를 실행 가능하게 만든다.
 - `~/.local/bin/claude-session-state` 심볼릭 링크를 생성한다.
-- `~/.local/bin`이 PATH에 없으면 쉘 설정 파일(`.zshrc`/`.bashrc`/`.profile`)에 자동으로 추가한다.
+- `~/.local/bin`이 PATH에 없으면 쉘 설정 파일에 자동으로 추가한다. zsh면 `.zshrc`, bash면 `.bashrc`를 쓰고, macOS의 bash는 로그인 쉘이 읽는 `.bash_profile`을 쓴다. 이미 같은 줄이 있으면 다시 넣지 않는다.
 
-설치 위치를 바꾸고 싶다면 환경변수로 지정할 수 있다:
+저장소를 직접 클론해서 쓰고 싶다면 그 안에서 실행하면 된다. 이 경우 따로 내려받지 않고 클론해둔 위치를 그대로 링크한다.
 
 ```bash
+git clone https://github.com/ThinkingDobby/Claude-Session-State.git
+cd Claude-Session-State
+./install.sh
+```
+
+경로는 환경변수로 바꿀 수 있다.
+
+```bash
+CLAUDE_SESSION_STATE_DIR="$HOME/src/claude-session-state" \
 CLAUDE_SESSION_STATE_BIN_DIR="$HOME/bin" ./install.sh
 ```
 
-설치 후 PATH 변경을 적용하려면 새 터미널을 열거나 안내된 대로 `source`를 실행한다.
+설치 후 PATH 변경을 적용하려면 새 터미널을 열거나 안내된 대로 `source`를 실행한다. 그 전에 바로 쓰고 싶으면 `~/.local/bin/claude-session-state`처럼 전체 경로로 실행하면 된다.
 
 ## 사용법
 
@@ -62,43 +76,19 @@ claude-session-state status   # 현재 상태 확인
 PORT=5000 claude-session-state start
 ```
 
-## 카드 클릭
-
-카드를 클릭하면 그 세션의 최근 대화 20턴을 팝업으로 보여준다. `~/.claude/projects`의 트랜스크립트 파일 끝부분을 읽어서 만들며, 생각 과정과 도구 호출 결과는 제외하고 주고받은 말만 추린다. 팝업은 열었을 때의 스냅샷이라 자동으로 갱신되지 않는다.
-
-카드의 `sid` 값을 클릭하면 팝업 대신 세션 ID 전체가 클립보드에 복사된다.
-
-카드 아래쪽과 팝업 헤더에는 그 세션에 선택된 모델을 표시한다. 트랜스크립트의 가장 최근 응답 기록에서 읽으므로, 세션 도중에 모델을 바꾸면 바뀐 모델이 나온다.
-
-## 접근 범위
-
-서버는 루프백(`127.0.0.1`)에만 바인딩된다. 대시보드는 인증이 없고 세션 이름과 작업 디렉터리 경로를 그대로 노출하므로, 같은 네트워크의 다른 기기가 접근할 수 없도록 기본값을 이렇게 잡았다.
-
-다른 기기에서 봐야 한다면 바인딩을 여는 대신 SSH 터널로 포트를 넘기는 쪽이 안전하다:
-
-```bash
-ssh -L 4321:127.0.0.1:4321 <사용자>@<이 머신>
-```
-
-그래도 직접 바인딩을 바꿔야 한다면 `HOST` 환경변수를 쓴다:
-
-```bash
-HOST=0.0.0.0 claude-session-state start
-```
-
 ## 참고
 
 - 서버 PID는 프로젝트 루트의 `.server.pid`에, 로그는 `.server.log`에 남는다 (둘 다 git에서 제외됨).
 - 이미 같은 포트를 다른 프로세스가 쓰고 있으면 새로 띄우지 않고 그 프로세스를 그대로 사용한다고 안내한다. 이 경우 `stop`으로 종료할 수 없으니 해당 프로세스를 직접 종료해야 한다.
-- 저장소를 옮기거나 심볼릭 링크가 아닌 방식으로 다시 설치하고 싶다면 `install.sh`를 다시 실행하면 된다(멱등적으로 동작).
 
 ## 삭제
 
 ```bash
 rm ~/.local/bin/claude-session-state
+rm -rf ~/.local/share/claude-session-state
 ```
 
-필요하면 클론한 프로젝트 디렉토리도 삭제한다.
+저장소를 직접 클론해서 설치했다면 그 디렉토리를 삭제한다. 쉘 설정 파일에 추가된 `# claude-session-state` PATH 줄도 직접 지우면 된다.
 </details>
 
 <br>
