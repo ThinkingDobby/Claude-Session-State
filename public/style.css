@@ -134,7 +134,7 @@ main {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px 20px;
-  width: min(360px, calc(100vw - 40px));
+  width: min(420px, calc(100vw - 40px));
   background: var(--panel);
   color: var(--text);
 }
@@ -194,6 +194,12 @@ main {
 .settings-row-desc {
   font-size: 12px;
   color: var(--muted);
+}
+
+/* 설정 행의 버튼은 라벨이 길어도 두 줄로 접히지 않게 한다. */
+.settings-row .ghost-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .error-banner {
@@ -322,13 +328,41 @@ main {
   margin-top: 10px;
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   font-size: 11px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
+.card-meta > span:first-child {
+  min-width: 0;
+  word-break: break-all;
+}
+
+.card-meta > span:last-child {
+  white-space: nowrap;
+}
+
 .card-meta-secondary {
   margin-top: 2px;
+}
+
+.card-sid {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+  border-bottom: 1px dotted var(--border);
+}
+
+.card-sid:hover,
+.card-sid:focus-visible {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  outline: none;
+}
+
+.card-sid.copied {
+  color: var(--accent);
+  border-bottom-color: transparent;
 }
 
 @keyframes pulse {

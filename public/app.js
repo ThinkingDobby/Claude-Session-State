@@ -19,6 +19,7 @@ let previousByPid = new Map();
 let activeFilter = 'all';
 let notifyEnabled = Notification && Notification.permission === 'granted';
 let kanbanEnabled = false;
+let copiedSessionId = null;
 
 // interactive 세션은 status 필드, background 세션은 state 필드를 쓴다.
 function rawStatus(session) {
@@ -77,6 +78,34 @@ function shortCwd(cwd) {
   return home;
 }
 
+// UUID 전체는 카드에 너무 길어서 앞 8자만 보여주고, 전체 값은 title/복사로 제공한다.
+function shortSessionId(sessionId) {
+  return `${sessionId.slice(0, 8)}…`;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    // 비보안 컨텍스트 등 클립보드 API가 막힌 경우 폴백
+  }
+  try {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(area);
+    return ok;
+  } catch (_) {
+    return false;
+  }
+}
+
 function notify(title, body) {
   if (!notifyEnabled) return;
   try {
@@ -120,6 +149,11 @@ function buildCardElement(session) {
   const raw = rawStatus(session);
   const cls = raw === 'waiting' ? 'waiting' : classify(raw);
   const idLabel = session.pid != null ? `pid ${session.pid}` : `id ${session.id || ''}`;
+  const sid = session.sessionId || '';
+  const copied = sid && sid === copiedSessionId;
+  const sidHtml = sid
+    ? ` · sid <span class="card-sid${copied ? ' copied' : ''}" role="button" tabindex="0" data-sid="${escapeHtml(sid)}" title="세션 ID: ${escapeHtml(sid)} (클릭하면 복사)">${escapeHtml(copied ? '복사됨!' : shortSessionId(sid))}</span>`
+    : '';
   card.innerHTML = `
     <div class="card-top">
       <div class="card-name" title="${escapeHtml(session.name || '')}">${escapeHtml(displayName(session))}</div>
@@ -127,7 +161,7 @@ function buildCardElement(session) {
     </div>
     <div class="card-cwd">${escapeHtml(shortCwd(session.cwd) || '')}</div>
     <div class="card-meta">
-      <span>${escapeHtml(session.kind || '')} · ${escapeHtml(idLabel)}</span>
+      <span>${escapeHtml(session.kind || '')} · ${escapeHtml(idLabel)}${sidHtml}</span>
       <span title="시작 시각">${escapeHtml(formatElapsed(session.startedAt))} 🕐</span>
     </div>
     ${session.lastActivityAt ? `
@@ -341,6 +375,39 @@ restartBtn.addEventListener('click', async () => {
     restartBtn.textContent = '🔄 서버 재시작';
     alert('서버가 다시 응답하지 않습니다. 터미널에서 claude-session-state restart 를 실행해 주세요.');
   }
+});
+
+async function handleSessionIdActivate(target) {
+  const sid = target.dataset.sid;
+  if (!sid) return;
+  const ok = await copyText(sid);
+  if (!ok) {
+    alert(`클립보드 복사에 실패했습니다. 세션 ID: ${sid}`);
+    return;
+  }
+  copiedSessionId = sid;
+  render();
+  setTimeout(() => {
+    if (copiedSessionId === sid) {
+      copiedSessionId = null;
+      render();
+    }
+  }, 1200);
+}
+
+[gridEl, kanbanEl].forEach((container) => {
+  container.addEventListener('click', (event) => {
+    const target = event.target.closest('.card-sid');
+    if (target) handleSessionIdActivate(target);
+  });
+  container.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target.closest('.card-sid');
+    if (target) {
+      event.preventDefault();
+      handleSessionIdActivate(target);
+    }
+  });
 });
 
 connectStream();
