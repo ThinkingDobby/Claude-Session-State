@@ -27,6 +27,8 @@ const MODEL_REFRESH_MS = 15000;
 const TRANSCRIPT_MAX_TURNS = 20;
 const TRANSCRIPT_MAX_CHARS = 2000;
 const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// 백그라운드 작업 id 는 짧은 16진수다. 셸로 넘기기 전에 형식을 확인한다.
+const JOB_ID_RE = /^[0-9a-f]{4,16}$/i;
 const PID_FILE = path.join(__dirname, '.server.pid');
 const LOG_FILE = path.join(__dirname, '.server.log');
 
@@ -307,6 +309,31 @@ function buildTurns(rawText) {
   return turns;
 }
 
+// claude rm 은 워크트리까지 지우며, 커밋되지 않은 변경이 있으면 거부한다.
+// 그래서 성공을 가정하지 않고 명령 출력을 그대로 돌려준다.
+function removeBackgroundJob(jobId, res) {
+  const send = (status, body) => {
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(body));
+  };
+
+  if (!JOB_ID_RE.test(jobId)) {
+    send(400, { ok: false, error: '유효하지 않은 작업 ID' });
+    return;
+  }
+
+  execFile(CLAUDE_BIN, ['rm', jobId], { timeout: 30000 }, (err, stdout, stderr) => {
+    const output = `${stdout || ''}${stderr || ''}`.trim();
+    if (err) {
+      send(200, { ok: false, error: output || err.message });
+      return;
+    }
+    // 폴링을 기다리지 않고 바로 반영되도록 즉시 갱신한다.
+    pollAndBroadcast();
+    send(200, { ok: true, output });
+  });
+}
+
 async function handleTranscript(sessionId, res) {
   const send = (status, body) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -353,6 +380,16 @@ const server = http.createServer(async (req, res) => {
     const data = lastPayload || await fetchSessions();
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(data));
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/background/remove' && req.method === 'POST') {
+    if (!isSameOriginRequest(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: '허용되지 않은 출처의 요청' }));
+      return;
+    }
+    removeBackgroundJob(requestUrl.searchParams.get('id') || '', res);
     return;
   }
 

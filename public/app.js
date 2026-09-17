@@ -17,14 +17,39 @@ const transcriptTitle = document.getElementById('transcript-title');
 const transcriptSubtitle = document.getElementById('transcript-subtitle');
 const transcriptBody = document.getElementById('transcript-body');
 const transcriptCloseBtn = document.getElementById('transcript-close-btn');
+const transcriptRemoveBtn = document.getElementById('transcript-remove-btn');
+const backgroundToggleBtn = document.getElementById('background-toggle');
 const filterButtons = document.querySelectorAll('#filters button');
+
+// 설정은 브라우저에 그대로 저장한다. 서버나 DB 를 끌어들일 만한 양이 아니다.
+const SETTINGS_PREFIX = 'css.';
+
+function loadSetting(key, fallback) {
+  try {
+    const raw = localStorage.getItem(SETTINGS_PREFIX + key);
+    return raw === null ? fallback : JSON.parse(raw);
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function saveSetting(key, value) {
+  try {
+    localStorage.setItem(SETTINGS_PREFIX + key, JSON.stringify(value));
+  } catch (_) {
+    // 사생활 보호 모드 등에서 실패할 수 있다. 저장만 못할 뿐 동작에는 지장 없다.
+  }
+}
 
 let currentSessions = [];
 let previousByPid = new Map();
-let activeFilter = 'all';
-let notifyEnabled = Notification && Notification.permission === 'granted';
-let kanbanEnabled = false;
-let copiedSessionId = null;
+let activeFilter = loadSetting('filter', 'all');
+let notifyEnabled = typeof Notification !== 'undefined'
+  && Notification.permission === 'granted'
+  && loadSetting('notify', true);
+let showBackground = loadSetting('showBackground', false);
+let kanbanEnabled = loadSetting('kanban', false);
+let copiedKey = null;
 
 // interactive 세션은 status 필드, background 세션은 state 필드를 쓴다.
 function rawStatus(session) {
@@ -37,6 +62,7 @@ function classify(rawValue) {
   if (rawValue === 'completed' || rawValue === 'done') return 'completed';
   if (rawValue === 'failed' || rawValue === 'error') return 'failed';
   if (rawValue === 'stopped' || rawValue === 'exited' || rawValue === 'killed') return 'stopped';
+  if (rawValue === 'crashed') return 'failed';
   return 'other';
 }
 
@@ -49,6 +75,7 @@ const STATUS_LABELS = {
   done: '완료',
   failed: '실패',
   error: '실패',
+  crashed: '비정상 종료',
   stopped: '중지됨',
   exited: '중지됨',
   killed: '중지됨',
@@ -145,8 +172,13 @@ const BUCKET_ORDER = ['busy', 'waiting', 'idle', 'other'];
 const BUCKET_LABELS = { busy: '작업 중', waiting: '입력 필요', idle: '대기 중', other: '기타' };
 const RANK_ORDER = { busy: 0, waiting: 1, idle: 2, other: 3 };
 
+function isHidden(session) {
+  return !showBackground && session.kind === 'background';
+}
+
 function diffAndNotify(nextByKey) {
   for (const [key, session] of nextByKey) {
+    if (isHidden(session)) continue;
     const prev = previousByPid.get(key);
     const prevRaw = prev && rawStatus(prev);
     const nextRaw = rawStatus(session);
@@ -155,6 +187,7 @@ function diffAndNotify(nextByKey) {
     }
   }
   for (const [key, prev] of previousByPid) {
+    if (isHidden(prev)) continue;
     if (!nextByKey.has(key) && rawStatus(prev) === 'busy') {
       notify(`⏹ ${displayName(prev)} 세션 종료됨`, shortCwd(prev.cwd));
     }
@@ -170,6 +203,16 @@ function setText(el, text) {
   if (el.textContent !== text) el.textContent = text;
 }
 
+// 복사 가능한 값 하나를 그리는 공통 처리. 표시값과 복사값이 다를 수 있다.
+function applyCopyTarget(el, key, copyValue, displayValue, title) {
+  const copied = key === copiedKey;
+  setText(el, copied ? '복사됨' : displayValue);
+  el.classList.toggle('copied', copied);
+  if (el.dataset.copyKey !== key) el.dataset.copyKey = key;
+  if (el.dataset.copyValue !== copyValue) el.dataset.copyValue = copyValue;
+  if (el.title !== title) el.title = title;
+}
+
 function createCardShell() {
   const card = document.createElement('div');
   card.className = 'card';
@@ -180,7 +223,7 @@ function createCardShell() {
     </div>
     <div class="card-cwd"></div>
     <div class="card-meta">
-      <span><span class="card-kind-id"></span><span class="card-sid-wrap" hidden> · sid <span class="card-sid" role="button" tabindex="0"></span></span></span>
+      <span><span class="card-kind"></span><span class="card-ident-wrap" hidden> · <span class="card-ident-label"></span> <span class="card-copy card-ident" role="button" tabindex="0"></span></span><span class="card-sid-wrap" hidden> · sid <span class="card-copy card-sid" role="button" tabindex="0"></span></span></span>
       <span class="card-started" title="시작 시각"></span>
     </div>
     <div class="card-meta card-meta-secondary" hidden>
@@ -191,10 +234,9 @@ function createCardShell() {
   return card;
 }
 
-function updateCard(card, session) {
+function updateCard(card, session, key) {
   const raw = rawStatus(session);
   const cls = raw === 'waiting' ? 'waiting' : classify(raw);
-  const idLabel = session.pid != null ? `pid ${session.pid}` : `id ${session.id || ''}`;
   const sid = session.sessionId || '';
 
   if (sid) {
@@ -203,6 +245,14 @@ function updateCard(card, session) {
   } else {
     delete card.dataset.sessionId;
     delete card.dataset.sessionName;
+  }
+
+  card.dataset.sessionKind = session.kind || '';
+  card.dataset.statusLabel = statusLabel(raw);
+  if (session.kind === 'background' && session.id) {
+    card.dataset.jobId = session.id;
+  } else {
+    delete card.dataset.jobId;
   }
 
   const nameEl = card.querySelector('.card-name');
@@ -216,19 +266,34 @@ function updateCard(card, session) {
   setText(badge, statusLabel(raw));
 
   setText(card.querySelector('.card-cwd'), shortCwd(session.cwd) || '');
-  setText(card.querySelector('.card-kind-id'), `${session.kind || ''} · ${idLabel}`);
+  setText(card.querySelector('.card-kind'), session.kind || '');
+
+  // pid 가 있으면 pid 를, 없으면 백그라운드 작업 id 를 보여준다. 둘 다 복사 대상이다.
+  const identValue = session.pid != null ? String(session.pid) : (session.id || '');
+  const identLabel = session.pid != null ? 'pid' : 'id';
+  const identWrap = card.querySelector('.card-ident-wrap');
+  identWrap.hidden = !identValue;
+  if (identValue) {
+    setText(card.querySelector('.card-ident-label'), identLabel);
+    applyCopyTarget(
+      card.querySelector('.card-ident'),
+      `${key}:ident`,
+      identValue,
+      identValue,
+      `${identLabel} ${identValue} (클릭하면 복사)`,
+    );
+  }
 
   const sidWrap = card.querySelector('.card-sid-wrap');
   sidWrap.hidden = !sid;
   if (sid) {
-    const sidEl = card.querySelector('.card-sid');
-    const copied = sid === copiedSessionId;
-    setText(sidEl, copied ? '복사됨!' : shortSessionId(sid));
-    sidEl.classList.toggle('copied', copied);
-    if (sidEl.dataset.sid !== sid) {
-      sidEl.dataset.sid = sid;
-      sidEl.title = `세션 ID: ${sid} (클릭하면 복사)`;
-    }
+    applyCopyTarget(
+      card.querySelector('.card-sid'),
+      `${key}:sid`,
+      sid,
+      shortSessionId(sid),
+      `세션 ID: ${sid} (클릭하면 복사)`,
+    );
   }
 
   setText(card.querySelector('.card-started'), `${formatElapsed(session.startedAt)} 🕐`);
@@ -253,7 +318,7 @@ function buildCardElement(session) {
     card.dataset.key = key;
     cardElements.set(key, card);
   }
-  updateCard(card, session);
+  updateCard(card, session, key);
   return card;
 }
 
@@ -325,14 +390,16 @@ function renderKanban(filtered) {
 
 // 사라진 세션의 카드 요소는 캐시에서 지운다.
 function pruneCardElements() {
-  const liveKeys = new Set(currentSessions.map((session) => sessionKey(session)));
+  const liveKeys = new Set(currentSessions.filter((s) => !isHidden(s)).map((session) => sessionKey(session)));
   for (const key of cardElements.keys()) {
     if (!liveKeys.has(key)) cardElements.delete(key);
   }
 }
 
 function render() {
-  const filtered = currentSessions.filter((s) => activeFilter === 'all' || filterBucket(rawStatus(s)) === activeFilter);
+  const filtered = currentSessions
+    .filter((s) => !isHidden(s))
+    .filter((s) => activeFilter === 'all' || filterBucket(rawStatus(s)) === activeFilter);
 
   emptyEl.hidden = filtered.length > 0;
 
@@ -393,6 +460,7 @@ filterButtons.forEach((btn) => {
     filterButtons.forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     activeFilter = btn.dataset.filter;
+    saveSetting('filter', activeFilter);
     render();
   });
 });
@@ -420,7 +488,22 @@ updateKanbanToggleButton();
 
 kanbanToggleBtn.addEventListener('click', () => {
   kanbanEnabled = !kanbanEnabled;
+  saveSetting('kanban', kanbanEnabled);
   updateKanbanToggleButton();
+  render();
+});
+
+function updateBackgroundToggleButton() {
+  backgroundToggleBtn.classList.toggle('on', showBackground);
+  backgroundToggleBtn.textContent = showBackground ? '🌙 표시함' : '🌙 숨김';
+}
+
+updateBackgroundToggleButton();
+
+backgroundToggleBtn.addEventListener('click', () => {
+  showBackground = !showBackground;
+  saveSetting('showBackground', showBackground);
+  updateBackgroundToggleButton();
   render();
 });
 
@@ -446,13 +529,9 @@ notifyBtn.addEventListener('click', async () => {
     notifyEnabled = permission === 'granted';
   }
 
+  saveSetting('notify', notifyEnabled);
   updateNotifyButton();
 });
-
-if ('Notification' in window && Notification.permission === 'granted') {
-  notifyBtn.classList.add('on');
-  notifyBtn.textContent = '🔔 알림 켜짐';
-}
 
 async function waitForServer(timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -492,19 +571,20 @@ restartBtn.addEventListener('click', async () => {
   }
 });
 
-async function handleSessionIdActivate(target) {
-  const sid = target.dataset.sid;
-  if (!sid) return;
-  const ok = await copyText(sid);
+async function handleCopyActivate(target) {
+  const value = target.dataset.copyValue;
+  const key = target.dataset.copyKey;
+  if (!value) return;
+  const ok = await copyText(value);
   if (!ok) {
-    alert(`클립보드 복사에 실패했습니다. 세션 ID: ${sid}`);
+    alert(`클립보드 복사에 실패했습니다: ${value}`);
     return;
   }
-  copiedSessionId = sid;
+  copiedKey = key;
   render();
   setTimeout(() => {
-    if (copiedSessionId === sid) {
-      copiedSessionId = null;
+    if (copiedKey === key) {
+      copiedKey = null;
       render();
     }
   }, 1200);
@@ -543,7 +623,21 @@ function renderTranscriptTurns(turns) {
   transcriptBody.scrollTop = transcriptBody.scrollHeight;
 }
 
-async function openTranscript(sessionId, sessionName, modelName) {
+let transcriptJobId = null;
+let transcriptJobState = '';
+
+async function openTranscript(card) {
+  const sessionId = card.dataset.sessionId;
+  const sessionName = card.dataset.sessionName;
+  const modelName = card.dataset.sessionModel;
+
+  transcriptJobId = card.dataset.jobId || null;
+  transcriptJobState = card.dataset.statusLabel || '';
+  transcriptRemoveBtn.hidden = !transcriptJobId;
+  transcriptDialog.classList.toggle('for-background', card.dataset.sessionKind === 'background');
+  transcriptRemoveBtn.disabled = false;
+  transcriptRemoveBtn.textContent = '세션 삭제';
+
   transcriptTitle.textContent = sessionName || '최근 대화';
   transcriptSubtitle.textContent = modelName ? `${modelName} · sid ${sessionId}` : `sid ${sessionId}`;
   renderTranscriptStatus('불러오는 중…');
@@ -566,6 +660,33 @@ transcriptCloseBtn.addEventListener('click', () => {
   transcriptDialog.close();
 });
 
+// claude rm 은 되돌릴 수 없고 워크트리까지 지우므로 확인을 받고,
+// 명령이 거부하면 그 출력을 그대로 보여준다.
+transcriptRemoveBtn.addEventListener('click', async () => {
+  const jobId = transcriptJobId;
+  if (!jobId) return;
+  const stateNote = transcriptJobState ? `\n현재 상태: ${transcriptJobState}` : '';
+  if (!confirm(`백그라운드 세션 ${jobId} 을(를) 삭제할까요?${stateNote}\n대화 기록과 워크트리가 함께 삭제되며 되돌릴 수 없습니다.`)) return;
+
+  transcriptRemoveBtn.disabled = true;
+  transcriptRemoveBtn.textContent = '삭제 중…';
+
+  try {
+    const res = await fetch(`/api/background/remove?id=${encodeURIComponent(jobId)}`, { method: 'POST' });
+    const payload = await res.json();
+    if (payload.ok) {
+      transcriptDialog.close();
+      return;
+    }
+    alert(`삭제하지 못했습니다.\n\n${payload.error || '알 수 없는 오류'}`);
+  } catch (err) {
+    alert(`삭제 요청에 실패했습니다: ${err.message}`);
+  }
+
+  transcriptRemoveBtn.disabled = false;
+  transcriptRemoveBtn.textContent = '세션 삭제';
+});
+
 transcriptDialog.addEventListener('click', (event) => {
   if (event.target === transcriptDialog) {
     transcriptDialog.close();
@@ -574,25 +695,29 @@ transcriptDialog.addEventListener('click', (event) => {
 
 [gridEl, kanbanEl].forEach((container) => {
   container.addEventListener('click', (event) => {
-    const target = event.target.closest('.card-sid');
+    const target = event.target.closest('.card-copy');
     if (target) {
-      handleSessionIdActivate(target);
+      handleCopyActivate(target);
       return;
     }
 
     const card = event.target.closest('.card');
     if (card && card.dataset.sessionId) {
-      openTranscript(card.dataset.sessionId, card.dataset.sessionName, card.dataset.sessionModel);
+      openTranscript(card);
     }
   });
   container.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
-    const target = event.target.closest('.card-sid');
+    const target = event.target.closest('.card-copy');
     if (target) {
       event.preventDefault();
-      handleSessionIdActivate(target);
+      handleCopyActivate(target);
     }
   });
+});
+
+filterButtons.forEach((btn) => {
+  btn.classList.toggle('active', btn.dataset.filter === activeFilter);
 });
 
 connectStream();

@@ -20,6 +20,10 @@
   --stopped: #6b7078;
   --stopped-bg: #eceef1;
   --accent: #4f46e5;
+  /* 백그라운드 세션을 구분하는 아주 옅은 회색 톤. 카드/팝업과 그 안의 말풍선에
+     같은 비율로 섞어서, 밝기 관계가 대화형 팝업과 똑같이 유지되도록 한다. */
+  --panel-alt: color-mix(in srgb, var(--muted) 6%, var(--panel));
+  --bg-alt: color-mix(in srgb, var(--muted) 6%, var(--bg));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -358,6 +362,11 @@ main {
   cursor: pointer;
 }
 
+/* 백그라운드 세션은 종류가 다르다는 것만 알아볼 정도로 아주 옅게 구분한다. */
+.card[data-session-kind="background"] {
+  background: var(--panel-alt);
+}
+
 .card:hover {
   border-color: var(--accent);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
@@ -380,6 +389,14 @@ main {
   display: none;
 }
 
+.transcript-dialog.for-background {
+  background: var(--panel-alt);
+}
+
+.transcript-dialog.for-background .transcript-text {
+  background: var(--bg-alt);
+}
+
 .transcript-dialog::backdrop {
   background: rgba(0, 0, 0, 0.35);
 }
@@ -390,6 +407,19 @@ main {
   border-bottom: 1px solid var(--border);
   margin-bottom: 14px;
   flex-shrink: 0;
+}
+
+.transcript-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ghost-btn.danger {
+  border-color: var(--failed);
+  color: var(--failed);
+  white-space: nowrap;
 }
 
 .transcript-title-text {
@@ -450,20 +480,20 @@ main {
   padding: 32px 0;
 }
 
-.card-sid {
+.card-copy {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   cursor: pointer;
   border-bottom: 1px dotted var(--border);
 }
 
-.card-sid:hover,
-.card-sid:focus-visible {
+.card-copy:hover,
+.card-copy:focus-visible {
   color: var(--accent);
   border-bottom-color: var(--accent);
   outline: none;
 }
 
-.card-sid.copied {
+.card-copy.copied {
   color: var(--accent);
   border-bottom-color: transparent;
 }

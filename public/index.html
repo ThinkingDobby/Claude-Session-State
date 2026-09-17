@@ -55,6 +55,13 @@
   </div>
   <div class="settings-row">
     <div class="settings-row-text">
+      <span class="settings-row-title">백그라운드 세션</span>
+      <span class="settings-row-desc">끄면 목록에서 감추고 완료 알림도 보내지 않습니다.</span>
+    </div>
+    <button id="background-toggle" class="ghost-btn">🌙 표시함</button>
+  </div>
+  <div class="settings-row">
+    <div class="settings-row-text">
       <span class="settings-row-title">서버</span>
       <span class="settings-row-desc">대시보드 서버를 재시작합니다. 완료되면 페이지가 새로고침됩니다.</span>
     </div>
@@ -68,7 +75,10 @@
       <h2 id="transcript-title">최근 대화</h2>
       <span id="transcript-subtitle" class="settings-row-desc"></span>
     </div>
-    <button id="transcript-close-btn" class="icon-btn" aria-label="닫기">✕</button>
+    <div class="transcript-actions">
+      <button id="transcript-remove-btn" class="ghost-btn danger" hidden>세션 삭제</button>
+      <button id="transcript-close-btn" class="icon-btn" aria-label="닫기">✕</button>
+    </div>
   </div>
   <div id="transcript-body" class="transcript-body"></div>
 </dialog>
